@@ -159,6 +159,7 @@ void connector::go()
 				}
 				else
 				{
+					close(it->sockfd);
 					ces.erase(it++);
 					ces_size--;
 					continue;
