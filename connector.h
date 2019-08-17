@@ -1,17 +1,19 @@
 #include <list>
 #include <vector>
 #include <fstream>
+#include <atomic>
 #include <poll.h>
 
 class connector
 {
 public:
 
-	connector(std::istream& in_stream, std::string filename, int port, int maxcon, int ttl, int poll_timeout);
+	connector(std::istream& in_stream, std::string filename, bool append, int port, int maxcon, int ttl, int poll_timeout);
 	~connector();
 
 	int newcon(const char* host, int port);
 	void go();
+	void die();
 
 private:
 	struct conn_entry
@@ -27,8 +29,11 @@ private:
 	void write_to_file(conn_entry& ce);
 	static char* getip(int fd);
 	static std::string escape(std::string s);
+	std::vector<pollfd> make_poll_vector();
+	void check_sockets(std::vector<pollfd>& poll_vector, time_t ts);
 
 	std::istream& in_stream;
+	bool append;
 	int port;
 	size_t maxcon;
 	int ttl;
@@ -37,6 +42,7 @@ private:
 	std::ofstream results_stream;
 	std::list<conn_entry> ces;
 
+	std::atomic<bool> running;
 	size_t ces_size = 0;
 	int maxfd = -1;
 	int total_lines = 0;

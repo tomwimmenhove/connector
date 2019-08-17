@@ -15,10 +15,10 @@
 
 using namespace std;
 
-connector::connector(istream& in_stream, string filename, int port, int maxcon, int ttl, int poll_timeout)
-	: in_stream(in_stream), port(port), maxcon(maxcon), ttl(ttl), poll_timeout(poll_timeout)
+connector::connector(istream& in_stream, string filename, bool append, int port, int maxcon, int ttl, int poll_timeout)
+	: in_stream(in_stream), append(append), port(port), maxcon(maxcon), ttl(ttl), poll_timeout(poll_timeout)
 {
-	results_stream.open(filename, ofstream::out | ofstream::trunc);
+	results_stream.open(filename, ofstream::out | (append ? ofstream::app : ofstream::trunc));
 }
 
 connector::~connector()
@@ -56,10 +56,130 @@ int connector::newcon(const char* host, int port)
 	return sockfd;
 }
 
+std::vector<pollfd> connector::make_poll_vector()
+{
+	vector<pollfd> poll_vector;
+	poll_vector.reserve(ces_size);
+	for(auto it = ces.begin(); it != ces.end(); ++it)
+	{
+		pollfd pfd;
+
+		pfd.fd = it->sockfd;
+		pfd.events = it->connected ? POLLIN : POLLOUT;
+		pfd.revents = 0;
+
+		poll_vector.push_back(pfd);
+
+		it->pfd = &poll_vector.back();
+	}
+
+	return poll_vector;
+}
+
+void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts)
+{
+	/* Wait for all the things */
+	int pret = poll(poll_vector.data(), ces_size, poll_timeout);
+	if (pret == -1)
+	{
+		if (errno == EINTR)
+			return;
+
+		perror("\npoll()");
+		exit(1);
+	}
+
+	std::list<conn_entry>::iterator it = ces.begin();
+	while (it != ces.end())
+	{
+		/* Time to die? */
+		if (ts - it->ts >= ttl)
+		{
+			if (it->connected)
+				write_to_file(*it);
+			close(it->sockfd);
+
+			ces.erase(it++);
+			ces_size--;
+			continue;
+		}
+
+		/* Connected? */
+		if (it->pfd->revents & POLLOUT)
+		{
+			socklen_t optlen = sizeof(int);
+			int optval = -1;
+			it->ip = getip(it->sockfd);
+			if (getsockopt(it->sockfd, SOL_SOCKET, SO_ERROR, &optval, &optlen) == -1)
+			{
+				cerr << '\n';
+				perror(it->ip.c_str());
+
+				ces.erase(it++);
+				ces_size--;
+				continue;
+			}
+
+			if (optval == 0)
+			{
+				total_connections++;
+				it->connected = true;
+
+				++it;
+				continue;
+			}
+			else
+			{
+				close(it->sockfd);
+				ces.erase(it++);
+				ces_size--;
+				continue;
+			}
+		}
+
+		/* data? */
+		if (it->connected && (it->pfd->revents & POLLIN))
+		{
+			//				cerr << "IN  " << it->sockfd << '\n';
+
+			char buffer[4096];
+			ssize_t n = read(it->sockfd, buffer, sizeof(buffer));
+			//				cerr << "\nn: " << n << '\n';
+			if (n > 0)
+			{
+				it->str += escape(string(buffer, n));
+			}
+			else
+			{
+				//if (n == -1)
+				//	perror("\nread()");
+
+				write_to_file(*it);
+				close(it->sockfd);
+
+				ces.erase(it++);
+				ces_size--;
+
+				continue;
+			}
+		}
+
+		++it;
+	}
+}
+
+void connector::die()
+{
+	cerr << "\nKilled, waiting for the connections in the queue to close...\n";
+	running = false;
+}
+
 void connector::go()
 {
 	string s;
-	while (in_stream || ces_size)
+	running = true;
+
+	while ((in_stream && running) || ces_size)
 	{
 #if true
 		cout << "\033[1G"
@@ -70,11 +190,8 @@ void connector::go()
 #endif
 
 		//for (auto i = ces.size(); i < maxcon;)
-		if (ces_size < maxcon)
+		if (running && ces_size < maxcon && getline(in_stream, s))
 		{
-			if (!getline(in_stream, s))
-				break;
-
 			time_t ts = time(NULL);
 			int sockfd = newcon(s.c_str(), port);
 			if (sockfd == -1)
@@ -95,102 +212,10 @@ void connector::go()
 		}
 
 		/* Setup an array with poll request events */
-		vector<pollfd> poll_vector;
-		poll_vector.reserve(ces_size);
-		for(auto it = ces.begin(); it != ces.end(); ++it)
-		{
-			pollfd pfd;
+		auto poll_vector = make_poll_vector();
 
-			pfd.fd = it->sockfd;
-			pfd.events = it->connected ? POLLIN : POLLOUT;
-			pfd.revents = 0;
-
-			poll_vector.push_back(pfd);
-
-			it->pfd = &poll_vector.back();
-		}
-
-
-		/* Wait for all the things */
-		int pret = poll(poll_vector.data(), ces_size, poll_timeout);
-		if (pret == -1)
-		{
-			perror("\npoll()");
-			exit(1);
-		}
-
-		time_t ts = time(NULL);
-
-		auto it = ces.begin();
-		while (it != ces.end())
-		{
-			/* Time to die? */
-			if (ts - it->ts >= ttl)
-			{
-				if (it->connected)
-					write_to_file(*it);
-				close(it->sockfd);
-
-				ces.erase(it++);
-				ces_size--;
-				continue;
-			}
-
-			/* Connected? */
-			if (it->pfd->revents & POLLOUT)
-			{
-				socklen_t optlen = sizeof(int);
-				int optval = -1;
-				it->ip = getip(it->sockfd);
-				if (getsockopt(it->sockfd, SOL_SOCKET, SO_ERROR, &optval, &optlen) == -1)
-				{
-					cerr << '\n';
-					perror(it->ip.c_str());
-
-					ces.erase(it++);
-					ces_size--;
-					continue;
-				}
-
-				if (optval == 0)
-				{
-					total_connections++;
-					it->connected = true;
-				}
-				else
-				{
-					close(it->sockfd);
-					ces.erase(it++);
-					ces_size--;
-					continue;
-				}
-			}
-
-			/* data? */
-			if (it->connected && (it->pfd->revents & POLLIN))
-			{
-				char buffer[4096];
-				ssize_t n = read(it->sockfd, buffer, sizeof(buffer));
-				if (n > 0)
-				{
-					it->str += escape(string(buffer, n));
-				}
-				else
-				{
-					//if (n == -1)
-						//perror("\nread()");
-
-					write_to_file(*it);
-					close(it->sockfd);
-
-					ces.erase(it++);
-					ces_size--;
-					continue;
-				}
-			}
-
-			++it;
-		}
+		// Start timer and do all the check shizzle
+		check_sockets(poll_vector, time(NULL));
 	}
 }
 

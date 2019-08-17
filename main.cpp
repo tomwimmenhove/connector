@@ -1,9 +1,25 @@
 #include <unistd.h>
 #include <iostream>
+#include <signal.h>
 
 #include "connector.h"
 
 using namespace std;
+
+static connector* c;
+
+static void sigint_handler(int)
+{
+	c->die();
+
+	/* Uninstall the handler, die next time */
+	struct sigaction sa;
+	sa.sa_handler = SIG_DFL;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
+
+	sigaction(SIGINT, &sa, nullptr);
+}
 
 int main(int argc, char** argv)
 {
@@ -12,12 +28,16 @@ int main(int argc, char** argv)
 	int ttl = 60;
 	int poll_timeout = 1000;
 	char* filename = nullptr;
+	bool append = false;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "p:m:l:t:f:h")) != -1)
+	while ((opt = getopt(argc, argv, "p:m:l:t:f:ah")) != -1)
        	{
 		switch (opt)
 	       	{
+			case 'a':
+				append = true;
+				break;
 			case 'p':
 				port = atoi(optarg);
 				break;
@@ -39,6 +59,7 @@ int main(int argc, char** argv)
 				cerr << "Usage: " << argv[0] << " [options]\n";
 				cerr << "\t-p: Port number\n";
 				cerr << "\t-f: Filename to store results in\n";
+				cerr << "\t-a: Append, don't truncate\n";
 				cerr << "\t-m: Maximum concurrent connections\n";
 				cerr << "\t-l: Time to live (seconds)\n";
 				cerr << "\t-t: poll() Timeout (milliseconds)\n";
@@ -58,9 +79,18 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
-	connector c(cin, filename, port, maxcon, ttl, poll_timeout);
+	struct sigaction sa;
+	sa.sa_handler = sigint_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
 
-	c.go();	
+	sigaction(SIGINT, &sa, nullptr);
+
+	c = new connector(cin, filename, append, port, maxcon, ttl, poll_timeout);
+
+	c->go();
+
+	delete c;
 
 	return 0;
 }
