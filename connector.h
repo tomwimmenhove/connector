@@ -9,7 +9,7 @@ class connector
 {
 public:
 
-	connector(std::istream& in_stream, std::string filename, bool append, int port, int maxcon, int ttl, int conn_rate);
+	connector(std::istream& in_stream, int skip, std::string filename, bool append, int port, int maxcon, int ttl, int conn_rate);
 	~connector();
 
 	int newcon(const char* host, int port);
@@ -28,6 +28,7 @@ private:
 		std::string str;
 	};
 
+	void print_stats();
 	void write_to_file(conn_entry& ce);
 	static char* getip(int fd);
 	static std::string escape(std::string s);
@@ -35,6 +36,7 @@ private:
 	void check_sockets(std::vector<pollfd>& poll_vector, std::chrono::time_point<std::chrono::high_resolution_clock> ts, int timeout);
 
 	std::istream& in_stream;
+	int skip;
 	bool append;
 	int port;
 	size_t maxcon;

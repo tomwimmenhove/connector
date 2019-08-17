@@ -14,8 +14,8 @@
 
 using namespace std;
 
-connector::connector(istream& in_stream, string filename, bool append, int port, int maxcon, int ttl, int conn_rate)
-	: in_stream(in_stream), append(append), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate)
+connector::connector(istream& in_stream, int skip, string filename, bool append, int port, int maxcon, int ttl, int conn_rate)
+	: in_stream(in_stream), skip(skip), append(append), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate)
 {
 	results_stream.open(filename, ofstream::out | (append ? ofstream::app : ofstream::trunc));
 }
@@ -182,6 +182,15 @@ void connector::cont()
 	cont_start = chrono::high_resolution_clock::now();
 }
 
+void connector::print_stats()
+{
+	cout << "\033[1G"
+		<< total_lines << " lines read, "
+		<< total_connections << " total connections, "
+		<< ces_size << " in progress\033[K"
+		<< flush;
+}
+
 void connector::go()
 {
 	string s;
@@ -190,18 +199,22 @@ void connector::go()
 	cont_start = chrono::high_resolution_clock::now();
 	auto last_stat = cont_start - chrono::milliseconds(250);
 
+	if (skip)
+	{
+		while (skip-- && getline(in_stream, s))
+			;
+
+		if (!in_stream)
+			return;
+	}
+
 	while ((in_stream && running) || ces_size)
 	{
 #if true
 		auto now = chrono::high_resolution_clock::now();
 		if (now - last_stat >= chrono::milliseconds(250))
 		{
-			cout << "\033[1G"
-				<< total_lines << " lines read, "
-				<< total_connections << " total connections, "
-				<< ces_size << " in progress\033[K"
-				<< flush;
-
+			print_stats();
 			last_stat = now;
 		}
 #endif
@@ -252,6 +265,7 @@ void connector::go()
 				break;		
 		}
 	}
+	print_stats();
 }
 
 void connector::write_to_file(conn_entry& ce)

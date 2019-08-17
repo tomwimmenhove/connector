@@ -35,12 +35,16 @@ int main(int argc, char** argv)
 	int conn_rate = 1;
 	char* filename = nullptr;
 	bool append = false;
+	int skip = 0;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "p:m:l:r:f:ah")) != -1)
+	while ((opt = getopt(argc, argv, "s:p:m:l:r:f:ah")) != -1)
        	{
 		switch (opt)
 	       	{
+			case 's':
+				skip = atoi(optarg);
+				break;
 			case 'a':
 				append = true;
 				break;
@@ -63,6 +67,7 @@ int main(int argc, char** argv)
 			case 'h':
 			default:
 				cerr << "Usage: " << argv[0] << " [options]\n";
+				cerr << "\t-s: Skip n lines from standard input\n";
 				cerr << "\t-p: Port number\n";
 				cerr << "\t-f: Filename to store results in\n";
 				cerr << "\t-a: Append, don't truncate\n";
@@ -98,7 +103,7 @@ int main(int argc, char** argv)
 
 	sigaction(SIGCONT, &sa, nullptr);
 
-	c = new connector(cin, filename, append, port, maxcon, ttl, conn_rate);
+	c = new connector(cin, skip, filename, append, port, maxcon, ttl, conn_rate);
 
 	c->go();
 
