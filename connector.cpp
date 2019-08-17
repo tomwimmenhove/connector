@@ -10,13 +10,14 @@
 #include <ctime>
 #include <string.h>
 #include <fcntl.h>
+#include <chrono>
 
 #include "connector.h"
 
 using namespace std;
 
-connector::connector(istream& in_stream, string filename, bool append, int port, int maxcon, int ttl, int poll_timeout)
-	: in_stream(in_stream), append(append), port(port), maxcon(maxcon), ttl(ttl), poll_timeout(poll_timeout)
+connector::connector(istream& in_stream, string filename, bool append, int port, int maxcon, int ttl, int conn_rate)
+	: in_stream(in_stream), append(append), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate)
 {
 	results_stream.open(filename, ofstream::out | (append ? ofstream::app : ofstream::trunc));
 }
@@ -76,10 +77,10 @@ std::vector<pollfd> connector::make_poll_vector()
 	return poll_vector;
 }
 
-void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts)
+void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts, int timeout)
 {
 	/* Wait for all the things */
-	int pret = poll(poll_vector.data(), ces_size, poll_timeout);
+	int pret = poll(poll_vector.data(), ces_size, timeout);
 	if (pret == -1)
 	{
 		if (errno == EINTR)
@@ -107,6 +108,10 @@ void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts)
 		/* Connected? */
 		if (it->pfd->revents & POLLOUT)
 		{
+			it->pfd->events &= ~POLLOUT; // Because we may poll again
+			it->pfd->revents &= ~POLLOUT; 
+
+//			cerr << "POLLOUT " << it->sockfd << '\n';
 			socklen_t optlen = sizeof(int);
 			int optval = -1;
 			it->ip = getip(it->sockfd);
@@ -140,6 +145,7 @@ void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts)
 		/* data? */
 		if (it->connected && (it->pfd->revents & POLLIN))
 		{
+//			cerr << "POLLIN " << it->sockfd << '\n';
 			//				cerr << "IN  " << it->sockfd << '\n';
 
 			char buffer[4096];
@@ -179,6 +185,8 @@ void connector::go()
 	string s;
 	running = true;
 
+	auto start = chrono::high_resolution_clock::now();
+
 	while ((in_stream && running) || ces_size)
 	{
 #if true
@@ -214,8 +222,26 @@ void connector::go()
 		/* Setup an array with poll request events */
 		auto poll_vector = make_poll_vector();
 
-		// Start timer and do all the check shizzle
-		check_sockets(poll_vector, time(NULL));
+		for(;;)
+		{
+			/* How long have we been running? */
+			auto poll_start = chrono::high_resolution_clock::now();
+			auto runtime = poll_start - start;
+
+			/* At the requested connection rate, what would the optimal runtime be? */
+			chrono::duration<double> strife_time((double) total_connections / conn_rate);
+
+			/* How long do we have to poll? */
+			auto wait = strife_time - runtime;
+			auto wait_ms = chrono::duration_cast<chrono::milliseconds>(wait).count();
+
+			/* Finally, do the polling */
+			check_sockets(poll_vector, time(NULL), wait_ms >= 0 ? wait_ms : 0);
+
+			/* If the wait time was less than a millisecond, we're done for now */
+			if (wait_ms <= 0)
+				break;		
+		}
 	}
 }
 

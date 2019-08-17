@@ -8,7 +8,7 @@ class connector
 {
 public:
 
-	connector(std::istream& in_stream, std::string filename, bool append, int port, int maxcon, int ttl, int poll_timeout);
+	connector(std::istream& in_stream, std::string filename, bool append, int port, int maxcon, int ttl, int conn_rate);
 	~connector();
 
 	int newcon(const char* host, int port);
@@ -30,14 +30,14 @@ private:
 	static char* getip(int fd);
 	static std::string escape(std::string s);
 	std::vector<pollfd> make_poll_vector();
-	void check_sockets(std::vector<pollfd>& poll_vector, time_t ts);
+	void check_sockets(std::vector<pollfd>& poll_vector, time_t ts, int timeout);
 
 	std::istream& in_stream;
 	bool append;
 	int port;
 	size_t maxcon;
 	int ttl;
-	int poll_timeout;
+	int conn_rate;
 
 	std::ofstream results_stream;
 	std::list<conn_entry> ces;

@@ -26,12 +26,12 @@ int main(int argc, char** argv)
 	int port = -1;
 	size_t maxcon = 10;
 	int ttl = 60;
-	int poll_timeout = 1000;
+	int conn_rate = 1;
 	char* filename = nullptr;
 	bool append = false;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "p:m:l:t:f:ah")) != -1)
+	while ((opt = getopt(argc, argv, "p:m:l:r:f:ah")) != -1)
        	{
 		switch (opt)
 	       	{
@@ -47,8 +47,8 @@ int main(int argc, char** argv)
 			case 'l':
 				ttl = atoi(optarg);
 				break;
-			case 't':
-				poll_timeout = atoi(optarg);
+			case 'r':
+				conn_rate = atoi(optarg);
 				break;
 			case 'f':
 				filename = optarg;
@@ -62,7 +62,7 @@ int main(int argc, char** argv)
 				cerr << "\t-a: Append, don't truncate\n";
 				cerr << "\t-m: Maximum concurrent connections\n";
 				cerr << "\t-l: Time to live (seconds)\n";
-				cerr << "\t-t: poll() Timeout (milliseconds)\n";
+				cerr << "\t-r: Max connection rate (sockets/second)\n";
 				exit(1);
 		}
 	}
@@ -86,7 +86,7 @@ int main(int argc, char** argv)
 
 	sigaction(SIGINT, &sa, nullptr);
 
-	c = new connector(cin, filename, append, port, maxcon, ttl, poll_timeout);
+	c = new connector(cin, filename, append, port, maxcon, ttl, conn_rate);
 
 	c->go();
 
