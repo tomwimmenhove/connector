@@ -50,7 +50,7 @@ private:
 	size_t ces_size = 0;
 	int maxfd = -1;
 	int total_lines = 0;
+	int total_lines_cont = 0;
 	int total_connections = 0;
-	int total_connections_cont = 0;
 	std::chrono::time_point<std::chrono::high_resolution_clock> cont_start;
 };

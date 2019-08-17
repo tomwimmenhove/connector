@@ -125,7 +125,6 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 			if (optval == 0)
 			{
 				total_connections++;
-				total_connections_cont++;
 				it->connected = true;
 
 				++it;
@@ -178,7 +177,7 @@ void connector::die()
 
 void connector::cont()
 {
-	total_connections_cont = 0;
+	total_lines_cont = 0;
 	cont_start = chrono::high_resolution_clock::now();
 }
 
@@ -198,6 +197,7 @@ void connector::go()
 
 	cont_start = chrono::high_resolution_clock::now();
 	auto last_stat = cont_start - chrono::milliseconds(250);
+	auto last_cont = cont_start;
 
 	if (skip)
 	{
@@ -212,8 +212,16 @@ void connector::go()
 
 	while ((in_stream && running) || ces_size)
 	{
-#if true
 		auto now = chrono::high_resolution_clock::now();
+
+		/* re-calculate rate every second */
+		if (now - last_cont >= chrono::milliseconds(1000))
+		{
+			cont();
+			last_cont = now;
+		}
+
+#if true
 		if (now - last_stat >= chrono::milliseconds(250))
 		{
 			print_stats();
@@ -240,6 +248,7 @@ void connector::go()
 			ces_size++;
 
 			total_lines++;
+			total_lines_cont++;
 		}
 
 		/* Setup an array with poll request events */
@@ -247,12 +256,19 @@ void connector::go()
 
 		for(;;)
 		{
-			/* How long have we been running? */
 			auto poll_start = chrono::high_resolution_clock::now();
+
+			if (ces_size == maxcon)
+			{
+				check_sockets(poll_vector, poll_start, 1000);
+				break;
+			}
+
+			/* How long have we been running? */
 			auto runtime = poll_start - cont_start;
 
 			/* At the requested connection rate, what would the optimal runtime be? */
-			chrono::duration<double> strife_time((double) total_connections_cont / conn_rate);
+			chrono::duration<double> strife_time((double) total_lines_cont / conn_rate);
 
 			/* How long do we have to poll? */
 			auto wait = strife_time - runtime;
