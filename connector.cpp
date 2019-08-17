@@ -201,8 +201,10 @@ void connector::go()
 
 	if (skip)
 	{
+		cerr << "Skipping...";
 		while (skip-- && getline(in_stream, s))
 			;
+		cerr << '\n';
 
 		if (!in_stream)
 			return;
