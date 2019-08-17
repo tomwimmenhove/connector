@@ -2,6 +2,7 @@
 #include <vector>
 #include <fstream>
 #include <atomic>
+#include <chrono>
 #include <poll.h>
 
 class connector
@@ -14,12 +15,13 @@ public:
 	int newcon(const char* host, int port);
 	void go();
 	void die();
+	void cont();
 
 private:
 	struct conn_entry
 	{
 		int sockfd;
-		time_t ts;
+		std::chrono::time_point<std::chrono::high_resolution_clock> ts;
 		bool connected;
 		pollfd* pfd;
 		std::string ip;
@@ -30,7 +32,7 @@ private:
 	static char* getip(int fd);
 	static std::string escape(std::string s);
 	std::vector<pollfd> make_poll_vector();
-	void check_sockets(std::vector<pollfd>& poll_vector, time_t ts, int timeout);
+	void check_sockets(std::vector<pollfd>& poll_vector, std::chrono::time_point<std::chrono::high_resolution_clock> ts, int timeout);
 
 	std::istream& in_stream;
 	bool append;
@@ -47,4 +49,6 @@ private:
 	int maxfd = -1;
 	int total_lines = 0;
 	int total_connections = 0;
+	int total_connections_cont = 0;
+	std::chrono::time_point<std::chrono::high_resolution_clock> cont_start;
 };

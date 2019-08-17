@@ -21,6 +21,12 @@ static void sigint_handler(int)
 	sigaction(SIGINT, &sa, nullptr);
 }
 
+static void sigcont_handler(int)
+{
+	cerr << "Cont'd\n";
+	c->cont();
+}
+
 int main(int argc, char** argv)
 {
 	int port = -1;
@@ -85,6 +91,12 @@ int main(int argc, char** argv)
 	sa.sa_flags = SA_RESTART;
 
 	sigaction(SIGINT, &sa, nullptr);
+
+	sa.sa_handler = sigcont_handler;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESTART;
+
+	sigaction(SIGCONT, &sa, nullptr);
 
 	c = new connector(cin, filename, append, port, maxcon, ttl, conn_rate);
 

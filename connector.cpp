@@ -7,10 +7,8 @@
 #include <errno.h>
 #include <sys/select.h>
 #include <fstream>
-#include <ctime>
 #include <string.h>
 #include <fcntl.h>
-#include <chrono>
 
 #include "connector.h"
 
@@ -77,7 +75,7 @@ std::vector<pollfd> connector::make_poll_vector()
 	return poll_vector;
 }
 
-void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts, int timeout)
+void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_point<std::chrono::high_resolution_clock> ts, int timeout)
 {
 	/* Wait for all the things */
 	int pret = poll(poll_vector.data(), ces_size, timeout);
@@ -94,7 +92,7 @@ void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts, int timeou
 	while (it != ces.end())
 	{
 		/* Time to die? */
-		if (ts - it->ts >= ttl)
+		if (ts - it->ts >= chrono::seconds(ttl))
 		{
 			if (it->connected)
 				write_to_file(*it);
@@ -111,7 +109,6 @@ void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts, int timeou
 			it->pfd->events &= ~POLLOUT; // Because we may poll again
 			it->pfd->revents &= ~POLLOUT; 
 
-//			cerr << "POLLOUT " << it->sockfd << '\n';
 			socklen_t optlen = sizeof(int);
 			int optval = -1;
 			it->ip = getip(it->sockfd);
@@ -128,6 +125,7 @@ void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts, int timeou
 			if (optval == 0)
 			{
 				total_connections++;
+				total_connections_cont++;
 				it->connected = true;
 
 				++it;
@@ -145,12 +143,10 @@ void connector::check_sockets(vector<pollfd>& poll_vector, time_t ts, int timeou
 		/* data? */
 		if (it->connected && (it->pfd->revents & POLLIN))
 		{
-//			cerr << "POLLIN " << it->sockfd << '\n';
-			//				cerr << "IN  " << it->sockfd << '\n';
+			it->pfd->events &= ~POLLIN; // XXX: Why? Without it poll() keeps triggering on this event.
 
 			char buffer[4096];
 			ssize_t n = read(it->sockfd, buffer, sizeof(buffer));
-			//				cerr << "\nn: " << n << '\n';
 			if (n > 0)
 			{
 				it->str += escape(string(buffer, n));
@@ -180,27 +176,39 @@ void connector::die()
 	running = false;
 }
 
+void connector::cont()
+{
+	total_connections_cont = 0;
+	cont_start = chrono::high_resolution_clock::now();
+}
+
 void connector::go()
 {
 	string s;
 	running = true;
 
-	auto start = chrono::high_resolution_clock::now();
+	cont_start = chrono::high_resolution_clock::now();
+	auto last_stat = cont_start - chrono::milliseconds(250);
 
 	while ((in_stream && running) || ces_size)
 	{
 #if true
-		cout << "\033[1G"
-			<< total_lines << " lines read, "
-			<< total_connections << " total connections, "
-			<< ces_size << " in progress\033[K"
-			<< flush;
+		auto now = chrono::high_resolution_clock::now();
+		if (now - last_stat >= chrono::milliseconds(250))
+		{
+			cout << "\033[1G"
+				<< total_lines << " lines read, "
+				<< total_connections << " total connections, "
+				<< ces_size << " in progress\033[K"
+				<< flush;
+
+			last_stat = now;
+		}
 #endif
 
-		//for (auto i = ces.size(); i < maxcon;)
 		if (running && ces_size < maxcon && getline(in_stream, s))
 		{
-			time_t ts = time(NULL);
+			auto ts = chrono::high_resolution_clock::now();
 			int sockfd = newcon(s.c_str(), port);
 			if (sockfd == -1)
 				continue;
@@ -226,20 +234,21 @@ void connector::go()
 		{
 			/* How long have we been running? */
 			auto poll_start = chrono::high_resolution_clock::now();
-			auto runtime = poll_start - start;
+			auto runtime = poll_start - cont_start;
 
 			/* At the requested connection rate, what would the optimal runtime be? */
-			chrono::duration<double> strife_time((double) total_connections / conn_rate);
+			chrono::duration<double> strife_time((double) total_connections_cont / conn_rate);
 
 			/* How long do we have to poll? */
 			auto wait = strife_time - runtime;
 			auto wait_ms = chrono::duration_cast<chrono::milliseconds>(wait).count();
 
 			/* Finally, do the polling */
-			check_sockets(poll_vector, time(NULL), wait_ms >= 0 ? wait_ms : 0);
+			check_sockets(poll_vector, poll_start,
+				       	wait_ms >= 0 ? wait_ms : 0);
 
 			/* If the wait time was less than a millisecond, we're done for now */
-			if (wait_ms <= 0)
+			if (wait_ms < 1)
 				break;		
 		}
 	}
