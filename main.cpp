@@ -1,7 +1,9 @@
 #include <unistd.h>
 #include <iostream>
 #include <signal.h>
+#include <string.h>
 
+#include "telnet.h"
 #include "connector.h"
 
 using namespace std;
@@ -27,6 +29,17 @@ static void sigcont_handler(int)
 	c->cont();
 }
 
+static negotiator_provider* get_negot(char* s)
+{
+	if (strcmp(s, "telnet") == 0)
+		return new telnet_provider();
+	else
+	{
+		cerr << "The only valid negotiator for now is \"telnet\"\n";
+		exit(1);
+	}
+}
+
 int main(int argc, char** argv)
 {
 	int port = -1;
@@ -36,9 +49,10 @@ int main(int argc, char** argv)
 	char* filename = nullptr;
 	bool append = false;
 	int skip = 0;
+	negotiator_provider* prov = nullptr;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "s:p:m:l:r:f:ah")) != -1)
+	while ((opt = getopt(argc, argv, "s:p:m:l:r:f:n:ah")) != -1)
        	{
 		switch (opt)
 	       	{
@@ -63,6 +77,9 @@ int main(int argc, char** argv)
 			case 'f':
 				filename = optarg;
 				break;
+			case 'n':
+				prov = get_negot(optarg);
+				break;
 
 			case 'h':
 			default:
@@ -74,6 +91,7 @@ int main(int argc, char** argv)
 				cerr << "\t-m: Maximum concurrent connections\n";
 				cerr << "\t-l: Time to live (seconds)\n";
 				cerr << "\t-r: Max connection rate (sockets/second)\n";
+				cerr << "\t-n: Use a negotiator. Use -n help for a list\n";
 				exit(1);
 		}
 	}
@@ -103,11 +121,13 @@ int main(int argc, char** argv)
 
 	sigaction(SIGCONT, &sa, nullptr);
 
-	c = new connector(cin, skip, filename, append, port, maxcon, ttl, conn_rate);
+	c = new connector(cin, skip, filename, append, port, maxcon, ttl, conn_rate, prov);
 
 	c->go();
 
 	delete c;
+	if (prov)
+		delete prov;
 
 	return 0;
 }

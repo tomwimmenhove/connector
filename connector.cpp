@@ -15,8 +15,10 @@
 
 using namespace std;
 
-connector::connector(istream& in_stream, int skip, string filename, bool append, int port, int maxcon, int ttl, int conn_rate)
-	: in_stream(in_stream), skip(skip), append(append), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate)
+connector::connector(istream& in_stream, int skip, string filename, bool append,
+		int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov)
+	: in_stream(in_stream), skip(skip), append(append),
+	port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate), prov(prov)
 {
 	results_stream.open(filename, ofstream::out | (append ? ofstream::app : ofstream::trunc));
 }
@@ -128,8 +130,9 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 				total_connections++;
 				it->connected = true;
 
-				/* Bring in the negotiator! */
-				it->negot = make_shared<telnet_negotiator>();
+				/* Bring in the negotiator? */
+				if (prov)
+					it->negot = prov->provide(it->sockfd);
 
 				++it;
 				continue;
@@ -153,11 +156,9 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 
 			if (n > 0)
 			{
-//				string s = negotiator(it->sockfd, buffer, n);
-
 				if (it->negot)
 				{
-					string s = it->negot->crunch(it->sockfd, buffer, n);
+					string s = it->negot->crunch(buffer, n);
 					it->str += escape(s);
 				}
 				else

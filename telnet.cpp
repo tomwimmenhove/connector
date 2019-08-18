@@ -12,7 +12,11 @@ using namespace std;
 #define CMD_ECHO 1
 #define CMD_WINDOW_SIZE 31
 
-string telnet_negotiator::crunch(int fd, unsigned char* buffer, size_t n)
+telnet_negotiator::telnet_negotiator(int sockfd)
+	: sockfd(sockfd)
+{ }
+
+string telnet_negotiator::crunch(unsigned char* buffer, size_t n)
 {
 	string s;
 
@@ -42,10 +46,10 @@ string telnet_negotiator::crunch(int fd, unsigned char* buffer, size_t n)
 				if (cmd == DO && ch == CMD_WINDOW_SIZE)
 				{
 					unsigned char tmp1[3] = {255, 251, 31};
-					write(fd, tmp1, 3);
+					write(sockfd, tmp1, 3);
 
 					unsigned char tmp2[9] = {255, 250, 31, 0, 80, 0, 24, 255, 240};
-					write(fd, tmp2, 9);
+					write(sockfd, tmp2, 9);
 				}
 				else
 				{
@@ -57,7 +61,7 @@ string telnet_negotiator::crunch(int fd, unsigned char* buffer, size_t n)
 
 					unsigned char tmp[3] = { 0xff, cmd, ch, };
 
-					write(fd, tmp, 3);
+					write(sockfd, tmp, 3);
 				}
 				/* XXX: END - Stolen */
 
@@ -72,3 +76,7 @@ string telnet_negotiator::crunch(int fd, unsigned char* buffer, size_t n)
 	return s;
 }
 
+std::shared_ptr<negotiator> telnet_provider::provide(int sockfd)
+{
+	return make_shared<telnet_negotiator>(sockfd);
+}

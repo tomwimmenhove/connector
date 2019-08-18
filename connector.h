@@ -15,7 +15,8 @@ class connector
 {
 public:
 
-	connector(std::istream& in_stream, int skip, std::string filename, bool append, int port, int maxcon, int ttl, int conn_rate);
+	connector(std::istream& in_stream, int skip, std::string filename, bool append,
+		       int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov = nullptr);
 	~connector();
 
 	int newcon(const char* host, int port);
@@ -50,6 +51,7 @@ private:
 	size_t maxcon;
 	int ttl;
 	int conn_rate;
+	negotiator_provider* prov;
 
 	std::ofstream results_stream;
 	std::list<conn_entry> ces;
