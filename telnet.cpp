@@ -4,6 +4,7 @@
 
 using namespace std;
 
+/* XXX: BEGIN - Stolen from http://l3net.wordpress.com/2012/12/09/a-simple-telnet-client */
 #define DO 0xfd
 #define WONT 0xfc
 #define WILL 0xfb
@@ -11,6 +12,7 @@ using namespace std;
 #define CMD 0xff
 #define CMD_ECHO 1
 #define CMD_WINDOW_SIZE 31
+/* XXX: END - Stolen */
 
 telnet_negotiator::telnet_negotiator(int sockfd)
 	: sockfd(sockfd)
@@ -45,11 +47,11 @@ string telnet_negotiator::crunch(unsigned char* buffer, size_t n)
 				/* XXX: BEGIN - Stolen from http://l3net.wordpress.com/2012/12/09/a-simple-telnet-client */
 				if (cmd == DO && ch == CMD_WINDOW_SIZE)
 				{
-					unsigned char tmp1[3] = {255, 251, 31};
-					write(sockfd, tmp1, 3);
+					write_queue.push(vector<unsigned char> 
+							{255, 251, 31});
 
-					unsigned char tmp2[9] = {255, 250, 31, 0, 80, 0, 24, 255, 240};
-					write(sockfd, tmp2, 9);
+					write_queue.push(vector<unsigned char> 
+							{255, 250, 31, 0, 80, 0, 24, 255, 240});
 				}
 				else
 				{
@@ -59,9 +61,7 @@ string telnet_negotiator::crunch(unsigned char* buffer, size_t n)
 					else if (cmd == WILL)
 						cmd = DO;
 
-					unsigned char tmp[3] = { 0xff, cmd, ch, };
-
-					write(sockfd, tmp, 3);
+					write_queue.push(vector<unsigned char> { 0xff, cmd, ch, });
 				}
 				/* XXX: END - Stolen */
 
@@ -74,6 +74,19 @@ string telnet_negotiator::crunch(unsigned char* buffer, size_t n)
 	}
 
 	return s;
+}
+
+bool telnet_negotiator::has_write_data()
+{
+	return !write_queue.empty();
+}
+
+std::vector<unsigned char> telnet_negotiator::pop_write_queue()
+{
+	auto top = write_queue.front();
+	write_queue.pop();
+
+	return top;
 }
 
 std::shared_ptr<negotiator> telnet_provider::provide(int sockfd)

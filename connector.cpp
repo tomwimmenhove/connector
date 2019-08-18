@@ -67,7 +67,14 @@ std::vector<pollfd> connector::make_poll_vector()
 		pollfd pfd;
 
 		pfd.fd = it->sockfd;
-		pfd.events = it->connected ? POLLIN : POLLOUT;
+		pfd.events = 0;
+
+		if (it->connected)
+			pfd.events |= POLLIN;
+
+		if (!it->connected || (it->negot && it->negot->has_write_data()))
+			pfd.events |= POLLOUT;
+
 		pfd.revents = 0;
 
 		poll_vector.push_back(pfd);
@@ -107,7 +114,7 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 		}
 
 		/* Connected? */
-		if (it->pfd->revents & POLLOUT)
+		if (!it->connected && it->pfd->revents & POLLOUT)
 		{
 			it->pfd->events &= ~POLLOUT; // Because we may poll again
 			it->pfd->revents &= ~POLLOUT; 
@@ -142,6 +149,23 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 				close(it->sockfd);
 				ces.erase(it++);
 				ces_size--;
+				continue;
+			}
+		}
+
+		/* Do we have shit to write? */
+		if (it->connected && (it->negot && it->negot->has_write_data()))
+		{
+			auto data_vector = it->negot->pop_write_queue();
+			ssize_t n = write(it->sockfd, data_vector.data(), data_vector.size());
+			if (n <= 0)
+			{
+				write_to_file(*it);
+				close(it->sockfd);
+
+				ces.erase(it++);
+				ces_size--;
+
 				continue;
 			}
 		}

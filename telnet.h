@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <queue>
 
 #include "negotiator.h"
 
@@ -15,6 +16,9 @@ public:
 
 	std::string crunch(unsigned char* buffer, size_t n) override;
 
+	bool has_write_data() override;
+	std::vector<unsigned char> pop_write_queue() override;
+
 private:
 	enum class state
 	{
@@ -26,6 +30,8 @@ private:
 	int sockfd;
 	unsigned char cmd;
 	state st = state::normal;
+
+	std::queue<std::vector<unsigned char>> write_queue;
 };
 
 class telnet_provider: public negotiator_provider
