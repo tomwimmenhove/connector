@@ -220,7 +220,7 @@ void connector::print_stats()
 	     << total_connections << " total connections, "
 	     << ces_size << " in progress";
 
-	if (insize > 0 && running)
+	if (insize > 0 && running && input)
 	{
 		float perc = 100.0 * input.tellg() / insize;
 		cerr << " -- " << std::setprecision(perc < 10 ? 3 : 4) << perc << '%';
