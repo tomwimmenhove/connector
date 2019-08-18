@@ -242,7 +242,8 @@ void connector::go()
 	if (skip)
 	{
 		cerr << "Skipping...";
-		while (skip-- && getline(in_stream, s))
+		auto i = skip;
+		while (i-- && getline(in_stream, s))
 			;
 		cerr << '\n';
 
@@ -324,6 +325,15 @@ void connector::go()
 		}
 	}
 	print_stats();
+
+	cout << '\n';
+
+	if (!running)
+	{
+		cout << "To continue the scan where we left off, "
+			"add these command-line options: -a -s "
+		       	<< (skip + total_lines) << '\n';
+	}
 }
 
 void connector::write_to_file(conn_entry& ce)
