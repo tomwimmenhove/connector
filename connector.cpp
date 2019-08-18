@@ -50,46 +50,8 @@ int connector::newcon(const char* host, int port)
 	return sockfd;
 }
 
-std::vector<pollfd> connector::make_poll_vector()
+void connector::check_timeouts(std::chrono::time_point<std::chrono::high_resolution_clock> ts)
 {
-	vector<pollfd> poll_vector;
-	poll_vector.reserve(ces_size);
-	for(auto it = ces.begin(); it != ces.end(); ++it)
-	{
-		pollfd pfd;
-
-		pfd.fd = it->sockfd;
-		pfd.events = 0;
-
-		if (it->connected)
-			pfd.events |= POLLIN;
-
-		if (!it->connected || (it->negot && it->negot->has_write_data()))
-			pfd.events |= POLLOUT;
-
-		pfd.revents = 0;
-
-		poll_vector.push_back(pfd);
-
-		it->pfd = &poll_vector.back();
-	}
-
-	return poll_vector;
-}
-
-void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_point<std::chrono::high_resolution_clock> ts, int timeout)
-{
-	/* Wait for all the things */
-	int pret = poll(poll_vector.data(), ces_size, timeout);
-	if (pret == -1)
-	{
-		if (errno == EINTR)
-			return;
-
-		perror("\npoll()");
-		exit(1);
-	}
-
 	std::list<conn_entry>::iterator it = ces.begin();
 	while (it != ces.end())
 	{
@@ -98,6 +60,7 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 		{
 			if (it->connected)
 				write_to_file(*it);
+			epoll_conn(*it, EPOLL_CTL_DEL);//, EPOLLOUT);
 			close(it->sockfd);
 
 			ces.erase(it++);
@@ -105,21 +68,47 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 			continue;
 		}
 
-		/* Connected? */
-		if (!it->connected && it->pfd->revents & POLLOUT)
-		{
-			it->pfd->events &= ~POLLOUT; // Because we may poll again
-			it->pfd->revents &= ~POLLOUT; 
+		++it;
+	}
+}
 
+void connector::check_sockets(int timeout)
+{
+	/* Anything left? */
+	if (!ces_size)
+		return;
+
+	vector<epoll_event> events;
+	events.resize(ces_size);
+	int n_poll = epoll_wait(epollfd, events.data(), ces_size, timeout);
+	if (n_poll == -1)
+	{
+		auto e = errno;
+		if (e == EINTR)
+			return;
+
+		cerr << "epoll_wait(): " << strerror(e) << '\n';
+		exit(1);
+	}
+
+	for (int i = 0; i < n_poll; i++)
+	{
+		epoll_event& event = events[i];
+
+		conn_entry* ce = (conn_entry*) event.data.ptr;
+
+		/* Connected? */
+		if (!ce->connected && event.events & EPOLLOUT)
+		{
 			socklen_t optlen = sizeof(int);
 			int optval = -1;
-			it->ip = getip(it->sockfd);
-			if (getsockopt(it->sockfd, SOL_SOCKET, SO_ERROR, &optval, &optlen) == -1)
+			ce->ip = getip(ce->sockfd);
+			if (getsockopt(ce->sockfd, SOL_SOCKET, SO_ERROR, &optval, &optlen) == -1)
 			{
-				cerr << '\n';
-				perror(it->ip.c_str());
+				cerr << "getsockopt() ip=" << ce->ip.c_str() << ", fd=" << ce->sockfd << ": " << strerror(errno) << '\n';
 
-				ces.erase(it++);
+				epoll_conn(*ce, EPOLL_CTL_DEL);
+				ces.erase(ce->it);
 				ces_size--;
 				continue;
 			}
@@ -127,35 +116,37 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 			if (optval == 0)
 			{
 				total_connections++;
-				it->connected = true;
+				ce->connected = true;
 
 				/* Bring in the negotiator? */
 				if (prov)
-					it->negot = prov->provide(it->sockfd);
+					ce->negot = prov->provide(ce->sockfd);
 
-				++it;
+				epoll_conn(*ce, EPOLL_CTL_MOD);
 				continue;
 			}
 			else
 			{
-				close(it->sockfd);
-				ces.erase(it++);
+				epoll_conn(*ce, EPOLL_CTL_DEL);
+				close(ce->sockfd);
+				ces.erase(ce->it);
 				ces_size--;
 				continue;
 			}
 		}
 
 		/* Do we have shit to write? */
-		if (it->connected && (it->negot && it->negot->has_write_data()))
+		if (ce->connected && event.events & EPOLLOUT && (ce->negot && ce->negot->has_write_data()))
 		{
-			auto data_vector = it->negot->pop_write_queue();
-			ssize_t n = write(it->sockfd, data_vector.data(), data_vector.size());
+			auto data_vector = ce->negot->pop_write_queue();
+			ssize_t n = write(ce->sockfd, data_vector.data(), data_vector.size());
 			if (n <= 0)
 			{
-				write_to_file(*it);
-				close(it->sockfd);
+				write_to_file(*ce);
+				epoll_conn(*ce, EPOLL_CTL_DEL);
+				close(ce->sockfd);
 
-				ces.erase(it++);
+				ces.erase(ce->it);
 				ces_size--;
 
 				continue;
@@ -163,23 +154,21 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 		}
 
 		/* data? */
-		if (it->connected && (it->pfd->revents & POLLIN))
+		if (ce->connected && (event.events & EPOLLIN))
 		{
-			it->pfd->events &= ~POLLIN; // XXX: Why? Without it poll() keeps triggering on this event.
-
 			unsigned char buffer[4096];
-			ssize_t n = read(it->sockfd, buffer, sizeof(buffer));
+			ssize_t n = read(ce->sockfd, buffer, sizeof(buffer));
 
 			if (n > 0)
 			{
-				if (it->negot)
+				if (ce->negot)
 				{
-					string s = it->negot->crunch(buffer, n);
-					it->str += escape(s);
+					string s = ce->negot->crunch(buffer, n);
+					ce->str += escape(s);
 				}
 				else
 				{
-					it->str += escape(string((char*) buffer, n));
+					ce->str += escape(string((char*) buffer, n));
 				}
 			}
 			else
@@ -187,17 +176,18 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 				//if (n == -1)
 				//	perror("\nread()");
 
-				write_to_file(*it);
-				close(it->sockfd);
+				write_to_file(*ce);
+				epoll_conn(*ce, EPOLL_CTL_DEL);
+				close(ce->sockfd);
 
-				ces.erase(it++);
+				ces.erase(ce->it);
 				ces_size--;
 
 				continue;
 			}
 		}
 
-		++it;
+		epoll_conn(*ce, EPOLL_CTL_MOD);
 	}
 }
 
@@ -230,6 +220,31 @@ void connector::print_stats()
 
 	cerr << "\033[K"
 	     << flush;
+}
+
+void connector::epoll_conn(conn_entry& ce, int op)//, uint32_t events)
+{
+	struct epoll_event ev;
+
+	uint32_t events = 0;
+
+	if (op != EPOLL_CTL_DEL)
+	{
+		if (ce.connected)
+			events |= EPOLLIN;
+
+		if (!ce.connected || (ce.negot && ce.negot->has_write_data()))
+			events |= EPOLLOUT;
+	}
+
+	ev.events = events;
+	ev.data.ptr = (void*) &ce;
+
+	if (epoll_ctl(epollfd, op, ce.sockfd, &ev) == -1)
+	{
+		perror("\nepoll_ctl");
+		exit(1);
+	}
 }
 
 void connector::run()
@@ -265,18 +280,27 @@ void connector::run()
 			return;
 	}
 
+	epollfd = epoll_create1(0);
+	if (epollfd == -1) {
+		perror("epoll_create1");
+		exit(1);
+	}
+
 	while ((input && running) || ces_size)
 	{
 		auto now = chrono::high_resolution_clock::now();
 
-		/* re-calculate rate every second */
 		if (now - last_cont >= chrono::milliseconds(1000))
 		{
+			/* re-calculate rate every second */
 			cont();
 			last_cont = now;
+
+			/* Check for connections that are past their time to live */
+			check_timeouts(now);
 		}
 
-#if true
+#if 1
 		if (now - last_stat >= chrono::milliseconds(250))
 		{
 			print_stats();
@@ -300,22 +324,28 @@ void connector::run()
 			ce.connected = false;
 
 			ces.push_back(ce);
+
+			auto& back = ces.back();
+
+			/* Keep an iterater to ourself */
+			back.it = std::prev(ces.end());
+
 			ces_size++;
+
+			/* Add the connection to the kernel's list of interest */
+			epoll_conn(back, EPOLL_CTL_ADD);
 
 			total_lines++;
 			total_lines_cont++;
 		}
 
-		/* Setup an array with poll request events */
-		auto poll_vector = make_poll_vector();
-
-		for(;;)
+		for(;ces_size > 0;)
 		{
 			auto poll_start = chrono::high_resolution_clock::now();
 
 			if (ces_size == maxcon)
 			{
-				check_sockets(poll_vector, poll_start, 1000);
+				check_sockets(1000);
 				break;
 			}
 
@@ -330,14 +360,16 @@ void connector::run()
 			auto wait_ms = chrono::duration_cast<chrono::milliseconds>(wait).count();
 
 			/* Finally, do the polling */
-			check_sockets(poll_vector, poll_start,
-				       	wait_ms >= 0 ? wait_ms : 0);
+			check_sockets(wait_ms >= 0 ? wait_ms : 0);
 
 			/* If the wait time was less than a millisecond, we're done for now */
 			if (wait_ms < 1)
 				break;		
 		}
 	}
+
+	close(epollfd);
+
 	print_stats();
 
 	cerr << '\n';

@@ -6,8 +6,9 @@
 #include <fstream>
 #include <atomic>
 #include <chrono>
-#include <poll.h>
 #include <memory>
+#include <sys/epoll.h>
+#include <cstdint>
 
 #include "negotiator.h"
 
@@ -44,20 +45,23 @@ private:
 		int sockfd;
 		std::chrono::time_point<std::chrono::high_resolution_clock> ts;
 		bool connected;
-		pollfd* pfd;
 		std::string ip;
 		std::string str;
 
 		std::shared_ptr<negotiator> negot;
+
+		/* Keep an iterator to ourself, in order to do fast removal of entries from the list */
+		std::list<conn_entry>::iterator it;
 	};
 
+	void check_timeouts(std::chrono::time_point<std::chrono::high_resolution_clock> ts);
 	int newcon(const char* host, int port);
 	void print_stats();
 	void write_to_file(conn_entry& ce);
 	static char* getip(int fd);
 	static std::string escape(std::string s);
-	std::vector<pollfd> make_poll_vector();
-	void check_sockets(std::vector<pollfd>& poll_vector, std::chrono::time_point<std::chrono::high_resolution_clock> ts, int timeout);
+	void check_sockets(int timeout);
+	void epoll_conn(conn_entry& ce, int op);
 
 	std::istream& input;
 	std::ostream& output;
@@ -79,6 +83,8 @@ private:
 	int total_lines = 0;
 	int total_lines_cont = 0;
 	int total_connections = 0;
+
+	int epollfd;
 
 	std::chrono::time_point<std::chrono::high_resolution_clock> cont_start;
 };

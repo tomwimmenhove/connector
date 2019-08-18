@@ -113,6 +113,12 @@ int main(int argc, char** argv)
 		return 1;
 	}
 
+	if (out_filename && to_terminal)
+	{
+		cerr << "Cannot use -t in combination with -o\n";
+		return 1;
+	}
+
 	ostream* out_stream;
 	ofstream out_file;
 	if (out_filename)
