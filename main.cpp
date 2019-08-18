@@ -2,13 +2,14 @@
 #include <iostream>
 #include <signal.h>
 #include <string.h>
+#include <memory>
 
 #include "telnet.h"
 #include "connector.h"
 
 using namespace std;
 
-static connector* c;
+static shared_ptr<connector> c;
 
 static void sigint_handler(int)
 {
@@ -29,10 +30,10 @@ static void sigcont_handler(int)
 	c->cont();
 }
 
-static negotiator_provider* get_negot(char* s)
+static shared_ptr<negotiator_provider> get_negot(char* s)
 {
 	if (strcmp(s, "telnet") == 0)
-		return new telnet_provider();
+		return make_shared<telnet_provider>();
 	else
 	{
 		cerr << "The only valid negotiator for now is \"telnet\"\n";
@@ -50,7 +51,7 @@ int main(int argc, char** argv)
 	char* out_filename = nullptr;
 	bool append = false;
 	int skip = 0;
-	negotiator_provider* prov = nullptr;
+	std::shared_ptr<negotiator_provider> prov = nullptr;
 
 	int opt;
 	while ((opt = getopt(argc, argv, "s:p:m:l:r:i:o:n:ah")) != -1)
@@ -97,14 +98,14 @@ int main(int argc, char** argv)
 				cerr << "\t-l: Time to live (seconds)\n";
 				cerr << "\t-r: Max connection rate (sockets/second)\n";
 				cerr << "\t-n: Use a negotiator. Use -n help for a list\n";
-				exit(1);
+				return 1;
 		}
 	}
 
 	if (port == -1)
 	{
 		cerr << "No port specified\n";
-		exit(1);
+		return 1;
 	}
 
 	ostream* out_stream;
@@ -115,7 +116,7 @@ int main(int argc, char** argv)
 		if (out_file.fail())
 		{
 			cerr << "Could not open " << out_filename << ": " << strerror(errno) << '\n';
-			exit(1);
+			return 1;
 		}
 		out_stream = &out_file;
 	}
@@ -141,7 +142,17 @@ int main(int argc, char** argv)
 		in_stream = &cin;
 	}
 
+	/* Instatiate the 'connector' */
+	c = make_shared<connector>(*in_stream, *out_stream, port);
 
+	/* Set parameters */
+	c->set_skip(skip);
+	c->set_maxcon(maxcon);
+	c->set_ttl(ttl);
+	c->set_conn_rate(conn_rate);
+	c->set_prov(prov);
+
+	/* Catch signals */
 	struct sigaction sa;
 	sa.sa_handler = sigint_handler;
 	sigemptyset(&sa.sa_mask);
@@ -155,13 +166,8 @@ int main(int argc, char** argv)
 
 	sigaction(SIGCONT, &sa, nullptr);
 
-	c = new connector(*in_stream, *out_stream, skip, port, maxcon, ttl, conn_rate, prov);
-
-	c->go();
-
-	delete c;
-	if (prov)
-		delete prov;
+	/* Finally, run. */
+	c->run();
 
 	return 0;
 }

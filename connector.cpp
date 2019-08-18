@@ -9,16 +9,16 @@
 #include <fstream>
 #include <string.h>
 #include <fcntl.h>
+#include <iomanip>
 
 #include "connector.h"
 #include "telnet.h"
 
 using namespace std;
 
-connector::connector(istream& input, ostream& output, int skip, int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov)
-	: input(input), output(output), skip(skip), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate), prov(prov)
-{
-}
+connector::connector(istream& input, ostream& output, int port)
+	: input(input), output(output), port(port)
+{ }
 
 int connector::newcon(const char* host, int port)
 {
@@ -216,21 +216,41 @@ void connector::cont()
 void connector::print_stats()
 {
 	cerr << "\033[1G"
-		<< total_lines << " lines read, "
-		<< total_connections << " total connections, "
-		<< ces_size << " in progress\033[K"
-		<< flush;
+	     << total_lines << " lines read, "
+	     << total_connections << " total connections, "
+	     << ces_size << " in progress";
+
+	if (insize > 0 && running)
+	{
+		float perc = 100.0 * input.tellg() / insize;
+		cerr << " -- " << std::setprecision(perc < 10 ? 3 : 4) << perc << '%';
+	}
+
+	cerr << "\033[K"
+	     << flush;
 }
 
-void connector::go()
+void connector::run()
 {
-	string s;
 	running = true;
 
 	cont_start = chrono::high_resolution_clock::now();
 	auto last_stat = cont_start - chrono::milliseconds(250);
 	auto last_cont = cont_start;
 
+	input.seekg (0, ios::end);
+	if (!input.fail())
+	{
+		insize = input.tellg();
+		input.seekg (0, ios::beg);
+	}
+	else
+	{
+		insize = -1;
+		input.clear();
+	}
+
+	string s;
 	if (skip)
 	{
 		cerr << "Skipping...";

@@ -14,13 +14,26 @@
 class connector
 {
 public:
+	connector(std::istream& input, std::ostream& output, int port);
 
-	connector(std::istream& input, std::ostream& output, int skip, int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov = nullptr);
-
-	int newcon(const char* host, int port);
-	void go();
+	void run();
 	void die();
 	void cont();
+
+	void set_skip(int skip) { this->skip = skip; }
+	int get_skip() { return skip; }
+
+	void set_maxcon(size_t maxcon) { this->maxcon = maxcon; }
+	size_t get_maxcon() { return maxcon; }
+
+	void set_ttl(int ttl) { this->ttl = ttl; }
+	int get_ttl() { return ttl; }
+
+	void set_conn_rate(int conn_rate) { this->conn_rate = conn_rate; }
+	int get_conn_rate() { return conn_rate; }
+
+	void set_prov(std::shared_ptr<negotiator_provider> prov) { this->prov = prov; }
+	std::shared_ptr<negotiator_provider> get_prov() { return prov; }
 
 private:
 	struct conn_entry
@@ -35,6 +48,7 @@ private:
 		std::shared_ptr<negotiator> negot;
 	};
 
+	int newcon(const char* host, int port);
 	void print_stats();
 	void write_to_file(conn_entry& ce);
 	static char* getip(int fd);
@@ -44,12 +58,14 @@ private:
 
 	std::istream& input;
 	std::ostream& output;
-	int skip;
+	std::streampos insize;
+
 	int port;
-	size_t maxcon;
-	int ttl;
-	int conn_rate;
-	negotiator_provider* prov;
+	int skip = 0;
+	size_t maxcon = 10;
+	int ttl = 60;
+	int conn_rate = 1;
+	std::shared_ptr<negotiator_provider> prov = nullptr;
 
 	std::list<conn_entry> ces;
 
