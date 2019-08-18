@@ -51,13 +51,17 @@ int main(int argc, char** argv)
 	char* out_filename = nullptr;
 	bool append = false;
 	int skip = 0;
+	bool to_terminal = false;
 	std::shared_ptr<negotiator_provider> prov = nullptr;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "s:p:m:l:r:i:o:n:ah")) != -1)
+	while ((opt = getopt(argc, argv, "s:p:m:l:r:i:o:n:aht")) != -1)
        	{
 		switch (opt)
 	       	{
+			case 't':
+				to_terminal = true;
+				break;
 			case 's':
 				skip = atoi(optarg);
 				break;
@@ -92,6 +96,7 @@ int main(int argc, char** argv)
 				cerr << "\t-o: Set output file to write results (banners) to (instead of stdout)\n";
 				cerr << "\t-i: Set input file to read IP addresses from (instead of stdin)\n";
 				cerr << "\t-s: Skip n lines from standard input\n";
+				cerr << "\t-t: Print banners directly to the terminal\n";
 				cerr << "\t-p: Port number\n";
 				cerr << "\t-a: Append, don't truncate\n";
 				cerr << "\t-m: Maximum concurrent connections\n";
@@ -151,6 +156,7 @@ int main(int argc, char** argv)
 	c->set_ttl(ttl);
 	c->set_conn_rate(conn_rate);
 	c->set_prov(prov);
+	c->set_to_terminal(to_terminal);
 
 	/* Catch signals */
 	struct sigaction sa;

@@ -20,6 +20,9 @@ public:
 	void die();
 	void cont();
 
+	void set_to_terminal(bool to_terminal) { this->to_terminal = to_terminal; }
+	bool get_to_terminal() { return to_terminal; }
+
 	void set_skip(int skip) { this->skip = skip; }
 	int get_skip() { return skip; }
 
@@ -61,6 +64,7 @@ private:
 	std::streampos insize;
 
 	int port;
+	bool to_terminal = false;
 	int skip = 0;
 	size_t maxcon = 10;
 	int ttl = 60;

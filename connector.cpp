@@ -225,6 +225,8 @@ void connector::print_stats()
 		float perc = 100.0 * input.tellg() / insize;
 		cerr << " -- " << std::setprecision(perc < 10 ? 3 : 4) << perc << '%';
 	}
+	else if (!running)
+		cerr << " -- closing...";
 
 	cerr << "\033[K"
 	     << flush;
@@ -350,8 +352,15 @@ void connector::run()
 
 void connector::write_to_file(conn_entry& ce)
 {
+	if (to_terminal)
+		output << "\033[1G\033[K";
+
 	output << ce.ip << ": " << ce.str << '\n';
-	output.flush();
+
+	if (to_terminal)
+		print_stats();
+	else
+		output.flush();
 }
 
 char* connector::getip(int fd)
