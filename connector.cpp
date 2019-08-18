@@ -11,6 +11,7 @@
 #include <fcntl.h>
 
 #include "connector.h"
+#include "telnet.h"
 
 using namespace std;
 
@@ -127,6 +128,9 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 				total_connections++;
 				it->connected = true;
 
+				/* Bring in the negotiator! */
+				it->negot = make_shared<telnet_negotiator>();
+
 				++it;
 				continue;
 			}
@@ -144,11 +148,22 @@ void connector::check_sockets(vector<pollfd>& poll_vector, std::chrono::time_poi
 		{
 			it->pfd->events &= ~POLLIN; // XXX: Why? Without it poll() keeps triggering on this event.
 
-			char buffer[4096];
+			unsigned char buffer[4096];
 			ssize_t n = read(it->sockfd, buffer, sizeof(buffer));
+
 			if (n > 0)
 			{
-				it->str += escape(string(buffer, n));
+//				string s = negotiator(it->sockfd, buffer, n);
+
+				if (it->negot)
+				{
+					string s = it->negot->crunch(it->sockfd, buffer, n);
+					it->str += escape(s);
+				}
+				else
+				{
+					it->str += escape(string((char*) buffer, n));
+				}
 			}
 			else
 			{

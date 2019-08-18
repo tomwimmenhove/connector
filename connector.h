@@ -1,9 +1,15 @@
+#ifndef CONNECTOR_H
+#define CONNECTOR_H
+
 #include <list>
 #include <vector>
 #include <fstream>
 #include <atomic>
 #include <chrono>
 #include <poll.h>
+#include <memory>
+
+#include "negotiator.h"
 
 class connector
 {
@@ -26,6 +32,8 @@ private:
 		pollfd* pfd;
 		std::string ip;
 		std::string str;
+
+		std::shared_ptr<negotiator> negot;
 	};
 
 	void print_stats();
@@ -54,3 +62,6 @@ private:
 	int total_connections = 0;
 	std::chrono::time_point<std::chrono::high_resolution_clock> cont_start;
 };
+
+#endif /* CONNECTOR_H */
+
