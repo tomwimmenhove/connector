@@ -46,13 +46,14 @@ int main(int argc, char** argv)
 	size_t maxcon = 10;
 	int ttl = 60;
 	int conn_rate = 1;
-	char* filename = nullptr;
+	char* in_filename = nullptr;
+	char* out_filename = nullptr;
 	bool append = false;
 	int skip = 0;
 	negotiator_provider* prov = nullptr;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "s:p:m:l:r:f:n:ah")) != -1)
+	while ((opt = getopt(argc, argv, "s:p:m:l:r:i:o:n:ah")) != -1)
        	{
 		switch (opt)
 	       	{
@@ -74,8 +75,11 @@ int main(int argc, char** argv)
 			case 'r':
 				conn_rate = atoi(optarg);
 				break;
-			case 'f':
-				filename = optarg;
+			case 'i':
+				in_filename = optarg;
+				break;
+			case 'o':
+				out_filename = optarg;
 				break;
 			case 'n':
 				prov = get_negot(optarg);
@@ -84,9 +88,10 @@ int main(int argc, char** argv)
 			case 'h':
 			default:
 				cerr << "Usage: " << argv[0] << " [options]\n";
+				cerr << "\t-o: Set output file to write results (banners) to (instead of stdout)\n";
+				cerr << "\t-i: Set input file to read IP addresses from (instead of stdin)\n";
 				cerr << "\t-s: Skip n lines from standard input\n";
 				cerr << "\t-p: Port number\n";
-				cerr << "\t-f: Filename to store results in\n";
 				cerr << "\t-a: Append, don't truncate\n";
 				cerr << "\t-m: Maximum concurrent connections\n";
 				cerr << "\t-l: Time to live (seconds)\n";
@@ -102,11 +107,40 @@ int main(int argc, char** argv)
 		exit(1);
 	}
 
-	if (filename == nullptr)
+	ostream* out_stream;
+	ofstream out_file;
+	if (out_filename)
 	{
-		cerr << "No filename specified\n";
-		exit(1);
+		out_file.open(out_filename, ofstream::out | (append ? ofstream::app : ofstream::trunc));
+		if (out_file.fail())
+		{
+			cerr << "Could not open " << out_filename << ": " << strerror(errno) << '\n';
+			exit(1);
+		}
+		out_stream = &out_file;
 	}
+	else
+	{
+		out_stream = &cout;
+	}
+
+	istream* in_stream;
+	ifstream in_file;
+	if (in_filename)
+	{
+		in_file.open(in_filename, ofstream::in);
+		if (in_file.fail())
+		{
+			cerr << "Could not open " << in_filename << ": " << strerror(errno) << '\n';
+			exit(1);
+		}
+		in_stream = &in_file;
+	}
+	else
+	{
+		in_stream = &cin;
+	}
+
 
 	struct sigaction sa;
 	sa.sa_handler = sigint_handler;
@@ -121,7 +155,7 @@ int main(int argc, char** argv)
 
 	sigaction(SIGCONT, &sa, nullptr);
 
-	c = new connector(skip, port, maxcon, ttl, conn_rate, prov);
+	c = new connector(*in_stream, *out_stream, skip, port, maxcon, ttl, conn_rate, prov);
 
 	c->go();
 

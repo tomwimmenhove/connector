@@ -15,8 +15,8 @@
 
 using namespace std;
 
-connector::connector(int skip, int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov)
-	: skip(skip), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate), prov(prov)
+connector::connector(istream& input, ostream& output, int skip, int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov)
+	: input(input), output(output), skip(skip), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate), prov(prov)
 {
 }
 
@@ -235,15 +235,15 @@ void connector::go()
 	{
 		cerr << "Skipping...";
 		auto i = skip;
-		while (i-- && getline(*input, s))
+		while (i-- && getline(input, s))
 			;
 		cerr << '\n';
 
-		if (!(*input))
+		if (!input)
 			return;
 	}
 
-	while (((*input) && running) || ces_size)
+	while ((input && running) || ces_size)
 	{
 		auto now = chrono::high_resolution_clock::now();
 
@@ -262,7 +262,7 @@ void connector::go()
 		}
 #endif
 
-		if (running && ces_size < maxcon && getline(*input, s))
+		if (running && ces_size < maxcon && getline(input, s))
 		{
 			auto ts = chrono::high_resolution_clock::now();
 			int sockfd = newcon(s.c_str(), port);
@@ -330,8 +330,8 @@ void connector::go()
 
 void connector::write_to_file(conn_entry& ce)
 {
-	(*output) << ce.ip << ": " << ce.str << '\n';
-	(*output).flush();
+	output << ce.ip << ": " << ce.str << '\n';
+	output.flush();
 }
 
 char* connector::getip(int fd)
