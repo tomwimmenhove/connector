@@ -121,7 +121,7 @@ int main(int argc, char** argv)
 
 	sigaction(SIGCONT, &sa, nullptr);
 
-	c = new connector(cin, skip, filename, append, port, maxcon, ttl, conn_rate, prov);
+	c = new connector(skip, port, maxcon, ttl, conn_rate, prov);
 
 	c->go();
 

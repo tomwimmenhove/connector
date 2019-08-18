@@ -15,17 +15,9 @@
 
 using namespace std;
 
-connector::connector(istream& in_stream, int skip, string filename, bool append,
-		int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov)
-	: in_stream(in_stream), skip(skip), append(append),
-	port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate), prov(prov)
+connector::connector(int skip, int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov)
+	: skip(skip), port(port), maxcon(maxcon), ttl(ttl), conn_rate(conn_rate), prov(prov)
 {
-	results_stream.open(filename, ofstream::out | (append ? ofstream::app : ofstream::trunc));
-}
-
-connector::~connector()
-{
-	results_stream.close();
 }
 
 int connector::newcon(const char* host, int port)
@@ -223,7 +215,7 @@ void connector::cont()
 
 void connector::print_stats()
 {
-	cout << "\033[1G"
+	cerr << "\033[1G"
 		<< total_lines << " lines read, "
 		<< total_connections << " total connections, "
 		<< ces_size << " in progress\033[K"
@@ -243,15 +235,15 @@ void connector::go()
 	{
 		cerr << "Skipping...";
 		auto i = skip;
-		while (i-- && getline(in_stream, s))
+		while (i-- && getline(*input, s))
 			;
 		cerr << '\n';
 
-		if (!in_stream)
+		if (!(*input))
 			return;
 	}
 
-	while ((in_stream && running) || ces_size)
+	while (((*input) && running) || ces_size)
 	{
 		auto now = chrono::high_resolution_clock::now();
 
@@ -270,7 +262,7 @@ void connector::go()
 		}
 #endif
 
-		if (running && ces_size < maxcon && getline(in_stream, s))
+		if (running && ces_size < maxcon && getline(*input, s))
 		{
 			auto ts = chrono::high_resolution_clock::now();
 			int sockfd = newcon(s.c_str(), port);
@@ -326,11 +318,11 @@ void connector::go()
 	}
 	print_stats();
 
-	cout << '\n';
+	cerr << '\n';
 
 	if (!running)
 	{
-		cout << "To continue the scan where we left off, "
+		cerr << "To continue the scan where we left off, "
 			"add these command-line options: -a -s "
 		       	<< (skip + total_lines) << '\n';
 	}
@@ -338,8 +330,8 @@ void connector::go()
 
 void connector::write_to_file(conn_entry& ce)
 {
-	results_stream << ce.ip << ": " << ce.str << '\n';
-	results_stream.flush();
+	(*output) << ce.ip << ": " << ce.str << '\n';
+	(*output).flush();
 }
 
 char* connector::getip(int fd)

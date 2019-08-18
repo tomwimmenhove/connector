@@ -15,9 +15,7 @@ class connector
 {
 public:
 
-	connector(std::istream& in_stream, int skip, std::string filename, bool append,
-		       int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov = nullptr);
-	~connector();
+	connector(int skip, int port, int maxcon, int ttl, int conn_rate, negotiator_provider* prov = nullptr);
 
 	int newcon(const char* host, int port);
 	void go();
@@ -44,16 +42,13 @@ private:
 	std::vector<pollfd> make_poll_vector();
 	void check_sockets(std::vector<pollfd>& poll_vector, std::chrono::time_point<std::chrono::high_resolution_clock> ts, int timeout);
 
-	std::istream& in_stream;
 	int skip;
-	bool append;
 	int port;
 	size_t maxcon;
 	int ttl;
 	int conn_rate;
 	negotiator_provider* prov;
 
-	std::ofstream results_stream;
 	std::list<conn_entry> ces;
 
 	std::atomic<bool> running;
@@ -62,6 +57,10 @@ private:
 	int total_lines = 0;
 	int total_lines_cont = 0;
 	int total_connections = 0;
+
+	std::istream* input = &std::cin;
+	std::ostream* output = &std::cout;
+
 	std::chrono::time_point<std::chrono::high_resolution_clock> cont_start;
 };
 
