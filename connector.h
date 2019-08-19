@@ -21,23 +21,23 @@ public:
 	void die();
 	void cont();
 
-	void set_to_terminal(bool to_terminal) { this->to_terminal = to_terminal; }
-	bool get_to_terminal() { return to_terminal; }
+	inline void set_to_terminal(bool to_terminal) { this->to_terminal = to_terminal; }
+	inline bool get_to_terminal() { return to_terminal; }
 
-	void set_skip(int skip) { this->skip = skip; }
-	int get_skip() { return skip; }
+	inline void set_skip(int skip) { this->skip = skip; }
+	inline int get_skip() { return skip; }
 
-	void set_maxcon(size_t maxcon) { this->maxcon = maxcon; }
-	size_t get_maxcon() { return maxcon; }
+	inline void set_maxcon(size_t maxcon) { this->maxcon = maxcon; }
+	inline size_t get_maxcon() { return maxcon; }
 
-	void set_ttl(int ttl) { this->ttl = ttl; }
-	int get_ttl() { return ttl; }
+	inline void set_ttl(int ttl) { this->ttl = ttl; }
+	inline int get_ttl() { return ttl; }
 
-	void set_conn_rate(int conn_rate) { this->conn_rate = conn_rate; }
-	int get_conn_rate() { return conn_rate; }
+	inline void set_conn_rate(int conn_rate) { this->conn_rate = conn_rate; }
+	inline int get_conn_rate() { return conn_rate; }
 
-	void set_prov(std::shared_ptr<negotiator_provider> prov) { this->prov = prov; }
-	std::shared_ptr<negotiator_provider> get_prov() { return prov; }
+	inline void set_prov(std::shared_ptr<negotiator_provider> prov) { this->prov = prov; }
+	inline std::shared_ptr<negotiator_provider> get_prov() { return prov; }
 
 private:
 	struct conn_entry
@@ -75,6 +75,7 @@ private:
 	int conn_rate = 1;
 	std::shared_ptr<negotiator_provider> prov = nullptr;
 
+	std::vector<epoll_event> events;
 	std::list<conn_entry> ces;
 
 	std::atomic<bool> running;

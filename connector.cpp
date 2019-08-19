@@ -60,7 +60,7 @@ void connector::check_timeouts(std::chrono::time_point<std::chrono::high_resolut
 		{
 			if (it->connected)
 				write_to_file(*it);
-			epoll_conn(*it, EPOLL_CTL_DEL);//, EPOLLOUT);
+			epoll_conn(*it, EPOLL_CTL_DEL);
 			close(it->sockfd);
 
 			ces.erase(it++);
@@ -78,8 +78,9 @@ void connector::check_sockets(int timeout)
 	if (!ces_size)
 		return;
 
-	vector<epoll_event> events;
-	events.resize(ces_size);
+	if (maxcon > events.size())
+		events.resize(ces_size);
+
 	int n_poll = epoll_wait(epollfd, events.data(), ces_size, timeout);
 	if (n_poll == -1)
 	{
@@ -222,7 +223,7 @@ void connector::print_stats()
 	     << flush;
 }
 
-void connector::epoll_conn(conn_entry& ce, int op)//, uint32_t events)
+void connector::epoll_conn(conn_entry& ce, int op)
 {
 	struct epoll_event ev;
 
@@ -330,11 +331,10 @@ void connector::run()
 			/* Keep an iterater to ourself */
 			back.it = std::prev(ces.end());
 
-			ces_size++;
-
 			/* Add the connection to the kernel's list of interest */
 			epoll_conn(back, EPOLL_CTL_ADD);
 
+			ces_size++;
 			total_lines++;
 			total_lines_cont++;
 		}
