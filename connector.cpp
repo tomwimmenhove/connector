@@ -58,9 +58,11 @@ void connector::check_timeouts(std::chrono::time_point<std::chrono::high_resolut
 		/* Time to die? */
 		if (ts - it->ts >= chrono::seconds(ttl))
 		{
+			auto& ce = *it;
+
 			if (it->connected)
-				write_to_file(*it);
-			poller.remove(epollfd, &(*it));
+				write_to_file(ce);
+			poller.remove(&ce);
 			close(it->sockfd);
 
 			ces.erase(it++);
@@ -138,7 +140,7 @@ bool connector::write_event(conn_entry* ce)
 		{
 			cerr << "getsockopt() ip=" << ce->ip.c_str() << ", fd=" << ce->sockfd << ": " << strerror(errno) << '\n';
 
-			poller.remove(epollfd, ce);
+			poller.remove(ce);
 			ces.erase(ce->it);
 			ces_size--;
 
@@ -158,7 +160,7 @@ bool connector::write_event(conn_entry* ce)
 		}
 		else
 		{
-			poller.remove(epollfd, ce);
+			poller.remove(ce);
 			close(ce->sockfd);
 			ces.erase(ce->it);
 			ces_size--;
@@ -175,7 +177,7 @@ bool connector::write_event(conn_entry* ce)
 		if (n <= 0)
 		{
 			write_to_file(*ce);
-			poller.remove(epollfd, ce);
+			poller.remove(ce);
 			close(ce->sockfd);
 
 			ces.erase(ce->it);
@@ -197,7 +199,7 @@ void connector::check_sockets(int timeout)
 	if (maxcon > events.size())
 		events.resize(maxcon);
 
-	if (!poller.poll(epollfd, maxcon, timeout))
+	if (!poller.poll(maxcon, timeout))
 	{
 		cerr << "poller: " << strerror(errno) << '\n';
 		exit(1);
@@ -268,12 +270,6 @@ void connector::run()
 			return;
 	}
 
-	epollfd = epoll_create1(0);
-	if (epollfd == -1) {
-		perror("epoll_create1");
-		exit(1);
-	}
-
 	while ((input && running) || ces_size)
 	{
 		auto now = chrono::high_resolution_clock::now();
@@ -319,7 +315,7 @@ void connector::run()
 			back.it = std::prev(ces.end());
 
 			/* Add the connection to the kernel's list of interest */
-			poller.add(epollfd, &back);
+			poller.add(&back);
 
 			ces_size++;
 			total_lines++;
@@ -354,8 +350,6 @@ void connector::run()
 				break;		
 		}
 	}
-
-	close(epollfd);
 
 	print_stats();
 
