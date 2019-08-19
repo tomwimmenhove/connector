@@ -79,7 +79,7 @@ void connector::check_sockets(int timeout)
 		return;
 
 	if (maxcon > events.size())
-		events.resize(ces_size);
+		events.resize(maxcon);
 
 	int n_poll = epoll_wait(epollfd, events.data(), ces_size, timeout);
 	if (n_poll == -1)
