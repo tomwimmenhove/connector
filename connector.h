@@ -1,8 +1,6 @@
 #ifndef CONNECTOR_H
 #define CONNECTOR_H
 
-#include <list>
-#include <vector>
 #include <fstream>
 #include <atomic>
 #include <chrono>
@@ -13,22 +11,9 @@
 
 #include "negotiator.h"
 #include "conn_poller.h"
+#include "conn_pool.h"
 
-struct conn_entry
-{
-	int sockfd;
-	std::chrono::time_point<std::chrono::high_resolution_clock> ts;
-	bool connected;
-	std::string ip;
-	std::string str;
-
-	std::shared_ptr<negotiator> negot;
-
-	/* Keep an iterator to ourself, in order to do fast removal of entries from the list */
-	std::list<conn_entry>::iterator it;
-};
-
-class connector : private poll_event_handler<conn_entry>
+class connector
 {
 public:
 	connector(std::istream& input, std::ostream& output, int port);
@@ -52,25 +37,17 @@ public:
 	inline void set_conn_rate(int conn_rate) { this->conn_rate = conn_rate; }
 	inline int get_conn_rate() { return conn_rate; }
 
-	inline void set_prov(std::shared_ptr<negotiator_provider> prov) { this->prov = prov; }
-	inline std::shared_ptr<negotiator_provider> get_prov() { return prov; }
+	inline void set_prov(std::shared_ptr<negotiator_provider> prov) { pool.set_prov(prov); }
+	inline std::shared_ptr<negotiator_provider> get_prov() { return pool.get_prov(); }
 
 private:
-	/* Implementation of poll_event_handler interface */
-	int get_fd(conn_entry* ce) override;
-	uint32_t get_req_events(conn_entry* ce) override;
-	bool read_event(conn_entry* ce) override;
-	bool write_event(conn_entry* ce) override;
+	conn_pool pool;
 
-	conn_poller<conn_entry> poller;
-
-	void check_timeouts(std::chrono::time_point<std::chrono::high_resolution_clock> ts);
 	int newcon(const char* host, int port);
 	void print_stats();
-	void write_to_file(conn_entry& ce);
+	void write_to_file(std::string host, std::string banner);
 	static char* getip(int fd);
 	static std::string escape(std::string s);
-	void check_sockets(int timeout);
 	void epoll_conn(conn_entry& ce, int op);
 
 	std::istream& input;
@@ -83,17 +60,10 @@ private:
 	size_t maxcon = 10;
 	int ttl = 60;
 	int conn_rate = 1;
-	std::shared_ptr<negotiator_provider> prov = nullptr;
-
-	std::vector<epoll_event> events;
-	std::list<conn_entry> ces;
 
 	std::atomic<bool> running;
-	size_t ces_size = 0;
-	int maxfd = -1;
 	int total_lines = 0;
 	int total_lines_cont = 0;
-	int total_connections = 0;
 
 	std::chrono::time_point<std::chrono::high_resolution_clock> cont_start;
 };

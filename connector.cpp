@@ -17,8 +17,10 @@
 using namespace std;
 
 connector::connector(istream& input, ostream& output, int port)
-	: poller(conn_poller<conn_entry>(this)), input(input), output(output), port(port)
-{ }
+	: input(input), output(output), port(port)
+{
+	pool.set_new_banner(bind(&connector::write_to_file, this, placeholders::_1, placeholders::_2));
+}
 
 int connector::newcon(const char* host, int port)
 {
@@ -50,162 +52,6 @@ int connector::newcon(const char* host, int port)
 	return sockfd;
 }
 
-void connector::check_timeouts(std::chrono::time_point<std::chrono::high_resolution_clock> ts)
-{
-	std::list<conn_entry>::iterator it = ces.begin();
-	while (it != ces.end())
-	{
-		/* Time to die? */
-		if (ts - it->ts >= chrono::seconds(ttl))
-		{
-			auto& ce = *it;
-
-			if (it->connected)
-				write_to_file(ce);
-			poller.remove(&ce);
-			close(it->sockfd);
-
-			ces.erase(it++);
-			ces_size--;
-			continue;
-		}
-
-		++it;
-	}
-}
-
-int connector::get_fd(conn_entry* ce)
-{
-	return ce->sockfd;
-}
-
-uint32_t connector::get_req_events(conn_entry* ce)
-{
-	uint32_t events = 0;
-
-	if (ce->connected)
-		events |= EPOLLIN;
-
-	if (!ce->connected || (ce->negot && ce->negot->has_write_data()))
-		events |= EPOLLOUT;
-
-	return events;
-}
-
-bool connector::read_event(conn_entry* ce)
-{
-	if (ce->connected)
-	{
-		unsigned char buffer[4096];
-		ssize_t n = read(ce->sockfd, buffer, sizeof(buffer));
-
-		if (n > 0)
-		{
-			if (ce->negot)
-			{
-				string s = ce->negot->crunch(buffer, n);
-				ce->str += escape(s);
-			}
-			else
-			{
-				ce->str += escape(string((char*) buffer, n));
-			}
-		}
-		else
-		{
-			//if (n == -1)
-			//	perror("\nread()");
-
-			write_to_file(*ce);
-			close(ce->sockfd);
-
-			ces.erase(ce->it);
-			ces_size--;
-
-			return false;
-		}
-	}
-
-	return true;
-}
-
-bool connector::write_event(conn_entry* ce)
-{
-	if (!ce->connected)
-	{
-		socklen_t optlen = sizeof(int);
-		int optval = -1;
-		ce->ip = getip(ce->sockfd);
-		if (getsockopt(ce->sockfd, SOL_SOCKET, SO_ERROR, &optval, &optlen) == -1)
-		{
-			cerr << "getsockopt() ip=" << ce->ip.c_str() << ", fd=" << ce->sockfd << ": " << strerror(errno) << '\n';
-
-			poller.remove(ce);
-			ces.erase(ce->it);
-			ces_size--;
-
-			return false;
-		}
-
-		if (optval == 0)
-		{
-			total_connections++;
-			ce->connected = true;
-
-			/* Bring in the negotiator? */
-			if (prov)
-				ce->negot = prov->provide(ce->sockfd);
-
-			return true;
-		}
-		else
-		{
-			poller.remove(ce);
-			close(ce->sockfd);
-			ces.erase(ce->it);
-			ces_size--;
-
-			return false;
-		}
-	}
-
-	/* Do we have shit to write? */
-	if (ce->connected && (ce->negot && ce->negot->has_write_data()))
-	{
-		auto data_vector = ce->negot->pop_write_queue();
-		ssize_t n = write(ce->sockfd, data_vector.data(), data_vector.size());
-		if (n <= 0)
-		{
-			write_to_file(*ce);
-			poller.remove(ce);
-			close(ce->sockfd);
-
-			ces.erase(ce->it);
-			ces_size--;
-
-			return false;
-		}
-	}
-
-	return true;
-}
-
-void connector::check_sockets(int timeout)
-{
-	/* Anything left? */
-	if (!ces_size)
-		return;
-
-	if (maxcon > events.size())
-		events.resize(maxcon);
-
-	if (!poller.poll(maxcon, timeout))
-	{
-		cerr << "poller: " << strerror(errno) << '\n';
-		exit(1);
-	}
-}
-
 void connector::die()
 {
 	cerr << "\nKilled, waiting for the connections in the queue to close...\n";
@@ -222,8 +68,8 @@ void connector::print_stats()
 {
 	cerr << "\033[1G"
 	     << total_lines << " lines read, "
-	     << total_connections << " total connections, "
-	     << ces_size << " in progress";
+	     << pool.get_total_connections() << " total connections, "
+	     << pool.get_queue_size() << " in progress";
 
 	if (insize > 0 && running && input)
 	{
@@ -270,7 +116,7 @@ void connector::run()
 			return;
 	}
 
-	while ((input && running) || ces_size)
+	while ((input && running) || pool.get_queue_size())
 	{
 		auto now = chrono::high_resolution_clock::now();
 
@@ -281,7 +127,7 @@ void connector::run()
 			last_cont = now;
 
 			/* Check for connections that are past their time to live */
-			check_timeouts(now);
+			pool.check_timeouts(now, ttl);
 		}
 
 #if 1
@@ -292,43 +138,25 @@ void connector::run()
 		}
 #endif
 
-		if (running && ces_size < maxcon && getline(input, s))
+		if (running && pool.get_queue_size() < maxcon && getline(input, s))
 		{
-			auto ts = chrono::high_resolution_clock::now();
 			int sockfd = newcon(s.c_str(), port);
 			if (sockfd == -1)
 				continue;
 
-			if (sockfd > maxfd)
-				maxfd = sockfd;
+			pool.add_fd(sockfd);
 
-			conn_entry ce;
-			ce.sockfd = sockfd;
-			ce.ts = ts;
-			ce.connected = false;
-
-			ces.push_back(ce);
-
-			auto& back = ces.back();
-
-			/* Keep an iterater to ourself */
-			back.it = std::prev(ces.end());
-
-			/* Add the connection to the kernel's list of interest */
-			poller.add(&back);
-
-			ces_size++;
 			total_lines++;
 			total_lines_cont++;
 		}
 
-		for(;ces_size > 0;)
+		for(;pool.get_queue_size() > 0;)
 		{
 			auto poll_start = chrono::high_resolution_clock::now();
 
-			if (ces_size == maxcon)
+			if (pool.get_queue_size() == maxcon)
 			{
-				check_sockets(1000);
+				pool.check_sockets(1000);
 				break;
 			}
 
@@ -343,7 +171,7 @@ void connector::run()
 			auto wait_ms = chrono::duration_cast<chrono::milliseconds>(wait).count();
 
 			/* Finally, do the polling */
-			check_sockets(wait_ms >= 0 ? wait_ms : 0);
+			pool.check_sockets(wait_ms >= 0 ? wait_ms : 0);
 
 			/* If the wait time was less than a millisecond, we're done for now */
 			if (wait_ms < 1)
@@ -363,12 +191,12 @@ void connector::run()
 	}
 }
 
-void connector::write_to_file(conn_entry& ce)
+void connector::write_to_file(string host, string banner)
 {
 	if (to_terminal)
-		output << "\033[1G\033[K";
+		output << ("\033[1G\033[K");
 
-	output << ce.ip << ": " << ce.str << '\n';
+	output << host << ": " << escape(banner) << '\n';
 
 	if (to_terminal)
 		print_stats();

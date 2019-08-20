@@ -35,7 +35,8 @@ string telnet_negotiator::crunch(unsigned char* buffer, size_t n)
 					break;
 				}
 
-				s += ch;
+				if (ch)
+					s += ch;
 
 				break;
 			case state::cmd1:
