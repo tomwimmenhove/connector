@@ -46,7 +46,6 @@ private:
 	int newcon(const char* host, int port);
 	void print_stats();
 	void write_to_file(std::string host, std::string banner);
-	static char* getip(int fd);
 	static std::string escape(std::string s);
 	void epoll_conn(conn_entry& ce, int op);
 

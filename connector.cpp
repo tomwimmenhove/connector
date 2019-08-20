@@ -204,14 +204,6 @@ void connector::write_to_file(string host, string banner)
 		output.flush();
 }
 
-char* connector::getip(int fd)
-{
-	struct sockaddr_in addr;
-	socklen_t addr_size = sizeof(addr);
-	getpeername(fd, (struct sockaddr*) &addr, &addr_size);
-	return inet_ntoa(addr.sin_addr);
-}
-
 string connector::escape(string s)
 {
 	string out;
